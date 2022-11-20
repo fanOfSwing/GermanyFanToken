@@ -363,7 +363,7 @@ interface IPancakePair{
     uint256 private _tFeeTotal;
 
     uint256 public dexTaxFee = 100; //take fee while sell token to dex
-   address public rewarPoolAddress=0x5d7d90658DdD9b728a31919b70F61440b8C6868B; // 3% fees for selling go to reward pool
+   address public rewarPoolAddress=0x5d7d90658DdD9b728a31919b70F61440b8C6868B; // 1% fees for selling go to reward pool
 
     address public  immutable pairAddress;
     address public  immutable routerAddress;
