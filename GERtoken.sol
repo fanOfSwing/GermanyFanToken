@@ -344,7 +344,7 @@ interface IPancakePair{
 
 
 
-   contract GermanyFanToken is Context, IERC20, Ownable {
+   contract GermanyFan is Context, IERC20, Ownable {
     using SafeMath for uint256;
     using Address for address;
 
@@ -353,7 +353,7 @@ interface IPancakePair{
     mapping (address => mapping (address => uint256)) private _allowances;
 
     mapping(address => bool) private _isExcludedFromRewardPoolFee;//a fees for selling, go to rewardPoolAddress
-
+     mapping (address => bool) private _isExcludedFromFee;
     mapping (address => bool) private _isExcluded;
     address[] private _excluded;
    
@@ -362,14 +362,19 @@ interface IPancakePair{
     uint256 private _rTotal = (MAX - (MAX % _tTotal));
     uint256 private _tFeeTotal;
 
-    uint256 public dexTaxFee = 100; //take fee while sell token to dex
-   address public rewarPoolAddress=0x5d7d90658DdD9b728a31919b70F61440b8C6868B; // 1% fees for selling go to reward pool
+   uint256 public _taxFee = 1;
+uint256 private _previousTaxFee = _taxFee;
+
+
+
+    uint256 public dexTaxFee = 200; //take fee while selling token to dex
+   address public rewarPoolAddress=0x011e16A917e41810593793bC00e916f2A3885e9d; // 2% fees for selling go to reward pool
 
     address public  immutable pairAddress;
     address public  immutable routerAddress;
 
 
-    string private _name = 'Germany Fan Token';
+    string private _name = 'Germany Football Fan Token';
     string private _symbol = 'GER';
     uint8 private _decimals = 9;
 
@@ -390,6 +395,11 @@ interface IPancakePair{
         // set the rest of the contract variables
         routerAddress = address(_router);
          _isExcludedFromRewardPoolFee[owner()] = true;
+
+          _isExcludedFromFee[owner()] = true; 
+          _isExcludedFromFee[address(this)] = true;
+          // exclude from reflection fee PinkLock's lockup address
+        _isExcludedFromFee[address(0x407993575c91ce7643a4d4cCACc9A98c36eE1BBE)] = true;// exclude from reflection fee PinkLock's lockup address
     }
 
 function excludeFromRewardPoolFee(address account) public onlyOwner {
@@ -409,9 +419,7 @@ function excludeFromRewardPoolFee(address account) public onlyOwner {
         rewarPoolAddress = _rewarPoolAddress;
     }
 
-    function setTax(uint256 _taxFee) public onlyOwner{
-        dexTaxFee = _taxFee;
-    }
+    
 
      
     function name() public view returns (string memory) {
@@ -520,6 +528,69 @@ function excludeFromRewardPoolFee(address account) public onlyOwner {
             }
         }
     }
+    ////////////////////
+
+
+    function excludeFromFee(address account) public onlyOwner {
+        _isExcludedFromFee[account] = true;
+    }
+
+    
+
+    function isExcludedFromFee(address account) public view returns(bool) {
+        return _isExcludedFromFee[account];
+    }
+
+
+    
+function _transfer(
+        address from,
+        address to,
+        uint256 amount
+    ) private {
+        require(from != address(0), "ERC20: transfer from the zero address");
+        require(to != address(0), "ERC20: transfer to the zero address");
+        require(amount > 0, "Transfer amount must be greater than zero");
+       
+        
+        
+        //indicates if fee should be deducted from transfer
+        bool taxFeeRefl = true;
+        
+        //if any account belongs to _isExcludedFromFee account then remove the fee
+        if(_isExcludedFromFee[from] || _isExcludedFromFee[to]){
+            taxFeeRefl = false;
+        }
+        
+        //transfer amount
+        _tokenTransfer(from,to,amount,taxFeeRefl);
+    }
+
+
+
+ function removeAllFee() private {
+        if(_taxFee == 0 ) return;
+        
+        _previousTaxFee = _taxFee;
+        
+        
+        _taxFee = 0;
+        
+    }
+    
+    function restoreAllFee() private {
+        _taxFee = _previousTaxFee;
+        
+    }
+    function calculateTaxFee(uint256 _amount) private view returns (uint256) {
+        return _amount.mul(_taxFee).div(10**2);
+    }
+
+
+
+
+    //////
+    
 
     function _approve(address owner, address spender, uint256 amount) private {
         require(owner != address(0), "ERC20: approve from the zero address");
@@ -529,7 +600,14 @@ function excludeFromRewardPoolFee(address account) public onlyOwner {
         emit Approval(owner, spender, amount);
     }
 
-    function _transfer(address sender, address recipient, uint256 amount) private {
+
+
+
+
+
+
+
+    function _tokenTransfer(address sender, address recipient, uint256 amount,bool taxFeeRefl) private {
         require(sender != address(0), "ERC20: transfer from the zero address");
         require(recipient != address(0), "ERC20: transfer to the zero address");
         require(amount > 0, "Transfer amount must be greater than zero");
@@ -544,6 +622,9 @@ function excludeFromRewardPoolFee(address account) public onlyOwner {
             emit Transfer(sender, rewarPoolAddress, taxFee);
             amount = amount.sub(taxFee);
         }
+
+         if(!taxFeeRefl)
+            removeAllFee();
         
         if (_isExcluded[sender] && !_isExcluded[recipient]) {
             _transferFromExcluded(sender, recipient, amount);
@@ -556,6 +637,8 @@ function excludeFromRewardPoolFee(address account) public onlyOwner {
         } else {
             _transferStandard(sender, recipient, amount);
         }
+        if(!taxFeeRefl)
+            restoreAllFee();
     }
 
     function _transferStandard(address sender, address recipient, uint256 tAmount) private {
@@ -606,8 +689,9 @@ function excludeFromRewardPoolFee(address account) public onlyOwner {
         return (rAmount, rTransferAmount, rFee, tTransferAmount, tFee);
     }
 
-    function _getTValues(uint256 tAmount) private pure returns (uint256, uint256) {
-        uint256 tFee = tAmount.div(100);
+    function _getTValues(uint256 tAmount) private view returns (uint256, uint256) {
+        
+        uint256 tFee = calculateTaxFee(tAmount);
         uint256 tTransferAmount = tAmount.sub(tFee);
         return (tTransferAmount, tFee);
     }
